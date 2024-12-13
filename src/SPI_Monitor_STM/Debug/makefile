@@ -84,8 +84,8 @@ all: main-build
 main-build: SPI_Monitor_STM.elf secondary-outputs
 
 # Tool invocations
-SPI_Monitor_STM.elf SPI_Monitor_STM.map: $(OBJS) $(USER_OBJS) /Users/moonchanyu/STM32CubeIDE/workspace_1.16.1/SPI_Monitor_STM/STM32F746NGHX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-g++ -o "SPI_Monitor_STM.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"/Users/moonchanyu/STM32CubeIDE/workspace_1.16.1/SPI_Monitor_STM/STM32F746NGHX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SPI_Monitor_STM.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
+SPI_Monitor_STM.elf SPI_Monitor_STM.map: $(OBJS) $(USER_OBJS) /Users/moonchanyu/STM32CubeIDE/workspace_1.16.1/BRIDGE_HW/src/SPI_Monitor_STM/STM32F746NGHX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-g++ -o "SPI_Monitor_STM.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"/Users/moonchanyu/STM32CubeIDE/workspace_1.16.1/BRIDGE_HW/src/SPI_Monitor_STM/STM32F746NGHX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SPI_Monitor_STM.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

@@ -58,7 +58,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 /*for slave remove this line, and for master write this line.*/
-//#define MASTER_BOARD
+#define MASTER_BOARD
 
 #define true 1
 #define false 0
@@ -86,25 +86,15 @@ typedef struct {
     uint8_t buffer[BUFFER_SIZE];
 } uint8_queue_t; // FIFO circular queue
 
-char Queue_Is_Empty(uint8_queue_t *cb) {
-	return cb->write_index == cb->read_index;
-}
+char Queue_Is_Empty(uint8_queue_t *cb) {return cb->write_index == cb->read_index;}
 
-char Queue_Is_Full(uint8_queue_t *cb) {
-	return ((cb->write_index + 1) % BUFFER_SIZE) == cb->read_index;
-}
+char Queue_Is_Full(uint8_queue_t *cb) {return ((cb->write_index + 1) % BUFFER_SIZE) == cb->read_index;}
 
-int Queue_Num_Read(uint8_queue_t *cb) {
-	return (BUFFER_SIZE + cb->write_index - cb->read_index) % BUFFER_SIZE;
-}
+int Queue_Num_Read(uint8_queue_t *cb) {return (BUFFER_SIZE + cb->write_index - cb->read_index) % BUFFER_SIZE;}
 
-uint8_t* Queue_Pos_Write(uint8_queue_t *cb) {
-	return cb->buffer + cb->write_index;
-}
+uint8_t* Queue_Pos_Write(uint8_queue_t *cb) {return cb->buffer + cb->write_index;}
 
-uint8_t* Queue_Pos_Read(uint8_queue_t *cb) {
-	return cb->buffer + cb->read_index;
-}
+uint8_t* Queue_Pos_Read(uint8_queue_t *cb) {return cb->buffer + cb->read_index;}
 
 char Queue_Append(uint8_queue_t *cb, uint8_t data) { // return success of appending
     if (Queue_Is_Full(cb)) {
@@ -124,12 +114,10 @@ char Queue_Pop(uint8_queue_t *cb) { // return pop'ed data
     return data;
 }
 
+// Define and Initialize buffer.
 uint8_queue_t usart2spi_buf = {0, 0};
 uint8_queue_t echo_buf = {0, 0}; // Tx buffers (when send spi, data attached echo)
 uint8_queue_t spi2usart_buf = {0,0};  // Rx buffer
-
-volatile uint8_t spi_ready = 0;
-
 
 /*Print buffer for debugging purpose*/
 void Print_Buffer(uint8_queue_t* buf, char* label) {
@@ -137,22 +125,20 @@ void Print_Buffer(uint8_queue_t* buf, char* label) {
     int idx = 0;
 
     // 라벨 출력: "Label: " 형식으로 버퍼 내용을 시작
-    idx += sprintf(temp_buf + idx, "[%s(%d, %d): ", label, buf->read_index, buf->write_index);
+    idx += sprintf(temp_buf + idx, "[%s (%d, %d): ", label, buf->read_index, buf->write_index);
 
-    // 버퍼 내 데이터를 읽고 임시 배열에 추가
+//     버퍼 내 데이터를 읽고 임시 배열에 추가
 //    volatile int i = buf->read_index;
     for (int i = buf->read_index; i != buf->write_index; i = (i + 1) % BUFFER_SIZE) {
         idx += sprintf(temp_buf + idx, "%02X ", buf->buffer[i]);
     }
 
     // 줄바꿈 추가하여 가독성을 높임
-    sprintf(temp_buf + idx, "]\r\n");
+    sprintf(temp_buf + idx, "]\n");
 
     // UART로 전송 (temp_buf 내용 전체를 시리얼 모니터로 출력)
-//    TSART_Tx((uint8_t*)temp_buf, strlen(temp_buf));
 	TSART_Tx(temp_buf, strlen(temp_buf));
 }
-
 
 /* USER CODE END PV */
 
@@ -168,13 +154,15 @@ static void MX_USART1_UART_Init(void);
 // Serial parts
 void TSART_Tx(uint8_t* buffer, uint8_t size)
 {
-    HAL_UART_Transmit(&huart1, buffer, size, HAL_MAX_DELAY);
+	HAL_UART_Transmit(&huart1, buffer, size, HAL_MAX_DELAY);
 }
+
 void TSART_Rx_Start(void)
 {
 	uint8_queue_t* rx_buf = &usart2spi_buf;
-	HAL_UART_Receive_IT(&huart1, Queue_Pos_Write(rx_buf), 1);
+	HAL_UART_Receive_IT(&huart1, Queue_Pos_Write(rx_buf), 4); // 8*4=32 (for intan)
 }
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	uint8_queue_t* rx_buf = &usart2spi_buf;
@@ -184,7 +172,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     	{
     		rx_buf->write_index = (rx_buf->write_index+1) % BUFFER_SIZE; // if full, overwrite last bit
     	}
-		HAL_UART_Receive_IT(&huart1, Queue_Pos_Write(rx_buf), 1);
+		HAL_UART_Receive_IT(&huart1, Queue_Pos_Write(rx_buf), 4); // 8*4
     }
 }
 
@@ -194,33 +182,51 @@ void SPI2_TxRx_Start(void)
 {
 #ifdef MASTER_BOARD
 	HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, GPIO_PIN_RESET);
-#else
-	if (!spi_ready) {return;}
 #endif
 	uint8_queue_t* rx_buf = &spi2usart_buf;
 	uint8_queue_t* tx_buf = &usart2spi_buf;
-
+	Print_Buffer(rx_buf, "RX");
+	Print_Buffer(tx_buf, "TX");
 	if (!Queue_Is_Empty(tx_buf))
 	{
 		Queue_Append(&echo_buf, *Queue_Pos_Read(tx_buf));
 		int prev_read_index = tx_buf->read_index;
 		tx_buf->read_index = (tx_buf->read_index+1) % BUFFER_SIZE;
 
-//		HAL_Delay(1);
-
-		HAL_SPI_TransmitReceive_IT(&hspi2, tx_buf->buffer + prev_read_index, Queue_Pos_Write(rx_buf), 1);
+		HAL_SPI_TransmitReceive_IT(&hspi2, tx_buf->buffer + prev_read_index, Queue_Pos_Write(rx_buf), 4);
 	}
 	else
 	{
-		HAL_SPI_TransmitReceive_IT(&hspi2, "\0", Queue_Pos_Write(rx_buf), 1);
+		HAL_SPI_TransmitReceive_IT(&hspi2, "\0", Queue_Pos_Write(rx_buf), 4);
 	}
 
 }
+
+void SPI_Transmit_32bit(uint32_t data_32bit) // Send 32 bit data (for intan SPI)
+{
+    uint8_t data_to_send[4]; // 8bit elements * 4
+    data_to_send[0] = (data_32bit >> 24) & 0xFF;  // MSB
+    data_to_send[1] = (data_32bit >> 16) & 0xFF;
+    data_to_send[2] = (data_32bit >> 8) & 0xFF;
+    data_to_send[3] = data_32bit & 0xFF;          // LSB
+
+    for (int i = 0; i < 4; i++)
+    {
+        // Blocking transmit for simplicity. Use DMA or interrupts for optimization.
+        if (HAL_SPI_Transmit(&hspi2, &data_to_send[i], 1, HAL_MAX_DELAY) != HAL_OK)
+        {
+            // Handle error
+            Error_Handler();
+        }
+    }
+}
+
 
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
 	uint8_queue_t* rx_buf = &spi2usart_buf;
     if (hspi->Instance == SPI2)
     {
+    	uint8_t recieved_data = rx_buf->buffer[rx_buf->read_index];
     	if (!Queue_Is_Full(rx_buf) && *Queue_Pos_Write(rx_buf) != 0)
 		{
     		rx_buf->write_index = (rx_buf->write_index+1) % BUFFER_SIZE; /*circular buffer*/
@@ -236,23 +242,17 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
     }
 }
 
-
 #ifndef MASTER_BOARD // for slave. automatically SPI is ready when CS low
 
-void EXTI9_5_IRQHandler(void) {
-    HAL_GPIO_EXTI_IRQHandler(SPI2_CS_Pin);
-}
+void EXTI9_5_IRQHandler(void) {HAL_GPIO_EXTI_IRQHandler(SPI2_CS_Pin);}
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     if (GPIO_Pin == SPI2_CS_Pin) {
     	if (HAL_GPIO_ReadPin(SPI2_CS_GPIO_Port, SPI2_CS_Pin) == GPIO_PIN_RESET) // SPI 통신 준비 상
 		{
-    		spi_ready = 1;
+    		// SPI 가 준비되었다는 것만 설정.
     		SPI2_TxRx_Start();
 		}
-    	else{
-    		spi_ready = 0;
-    	}
 //    	else if (HAL_GPIO_ReadPin(SPI2_CS_GPIO_Port, SPI2_CS_Pin) == GPIO_PIN_SET)
 //    	{
 //    		HAL_SPI_Abort_IT(&hspi2);
@@ -266,7 +266,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
 /* USER CODE END 0 */
 
 /**
@@ -277,7 +276,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -286,17 +284,14 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
-
   /* Configure the peripherals common clocks */
   PeriphCommonClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -312,58 +307,84 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-//#ifndef MASTER_BOARD
-//  uint32_t previous_tick = HAL_GetTick(); // 이전 tick 시간 저장
-//#endif
+
   char pop_buf;
   while (1)
   {
 #ifdef MASTER_BOARD
 	if (!Queue_Is_Empty(tx_buf)) // && *(Queue_Pos_Write(tx_buf)-1)=='\n')
 	{
+		TSART_Tx("-----Master SPI started-----\n", strlen("-----Master SPI started-----\n"));
 		SPI2_TxRx_Start();
 	}
 #endif
-	// echo_buf (UART 로 부터 받은 msg 저장) 에 msg가 차있으면,
-	if (Queue_Is_Full(&echo_buf) || (!Queue_Is_Empty(&echo_buf) && *(Queue_Pos_Write(&echo_buf)-1)=='\n'))
+// echo_buf (UART 로 부터 받은 msg 저장) 에 msg가 차있으면,
+	if (Queue_Is_Full(&echo_buf) || (!Queue_Is_Empty(&echo_buf)) && *(Queue_Pos_Write(&echo_buf)-1)=='\n')
 	{
-		TSART_Tx("Condition1\n", strlen("Condition1\n"));
-#ifdef MASTER_BOARD /* for debugging purpose*/
-		TSART_Tx("M<:", strlen("M<:"));
+		TSART_Tx("Condition1: Some sentence on TX buffer\n", strlen("Condition1: Some sentence on TX buffer\n"));
+#ifdef MASTER_BOARD // for debugging purpose
 		Print_Buffer(&echo_buf, "Echo Buffer (Master)");
 		Print_Buffer(tx_buf, "TX Buffer (Master)");
 		Print_Buffer(rx_buf, "RX Buffer (Master)");
+		TSART_Tx("M<:\n", strlen("M<:\n"));
 #else
-		TSART_Tx("S<:", strlen("S<:"));
 		Print_Buffer(&echo_buf, "Echo Buffer (Slave)");
 		Print_Buffer(tx_buf, "TX Buffer (Slave)");
 		Print_Buffer(rx_buf, "RX Buffer (Slave)");
+		TSART_Tx("S<:\n", strlen("S<:\n"));
 #endif
 		for (int read_num = Queue_Num_Read(&echo_buf); read_num > 0; read_num--)
 		{
 			pop_buf = Queue_Pop(&echo_buf);
 			TSART_Tx(&pop_buf, 1);
 		}
+#ifdef MASTER_BOARD // for debugging purpose
+		TSART_Tx("After Pop\n", strlen("After Pop\n"));
+		Print_Buffer(&echo_buf, "Echo Buffer (Master)");
+		Print_Buffer(tx_buf, "TX Buffer (Master)");
+		Print_Buffer(rx_buf, "RX Buffer (Master)");
+		TSART_Tx("M<:\n", strlen("M<:\n"));
+#else
+		Print_Buffer(&echo_buf, "Echo Buffer (Slave)");
+		Print_Buffer(tx_buf, "TX Buffer (Slave)");
+		Print_Buffer(rx_buf, "RX Buffer (Slave)");
+		TSART_Tx("S<:\n", strlen("S<:\n"));
+#endif
 	}
 //	Print_Buffer(rx_buf, "RX Buffer");
-	if (Queue_Is_Full(rx_buf) || (!Queue_Is_Empty(rx_buf) && *(Queue_Pos_Write(rx_buf)-1)=='\n'))
+	if (Queue_Is_Full(rx_buf) || (!Queue_Is_Empty(rx_buf)) && *(Queue_Pos_Write(rx_buf)-1)=='\n')
 	{
-	TSART_Tx("Condition2\n", strlen("Condition2\n"));
+		TSART_Tx("Condition2: Some sentence received on RX buffer\n", strlen("Condition2: Some sentence received on RX buffer\n"));
 #ifdef MASTER_BOARD
-		TSART_Tx("M>:", strlen("M>:"));
-
+		Print_Buffer(&echo_buf, "Echo Buffer (Master)");
+		Print_Buffer(tx_buf, "TX Buffer (Master)");
+		Print_Buffer(rx_buf, "RX Buffer (Master)");
+		TSART_Tx("M>:\n", strlen("M>:\n"));
 #else
-		TSART_Tx("S>:", strlen("S>:"));
-
+		Print_Buffer(&echo_buf, "Echo Buffer (Slave)");
+		Print_Buffer(tx_buf, "TX Buffer (Slave)");
+		Print_Buffer(rx_buf, "RX Buffer (Slave)");
+		TSART_Tx("S>:\n", strlen("S>:\n"));
 #endif
 		for (int read_num = Queue_Num_Read(rx_buf); read_num > 0; read_num--)
 		{
 			pop_buf = Queue_Pop(rx_buf);
 			TSART_Tx(&pop_buf, 1);
 		}
+#ifdef MASTER_BOARD
+		TSART_Tx("After Pop\n", strlen("After Pop\n"));
+		Print_Buffer(&echo_buf, "Echo Buffer (Master)");
+		Print_Buffer(tx_buf, "TX Buffer (Master)");
+		Print_Buffer(rx_buf, "RX Buffer (Master)");
+		TSART_Tx("M>:\n", strlen("M>:\n"));
+#else
+		Print_Buffer(&echo_buf, "Echo Buffer (Slave)");
+		Print_Buffer(tx_buf, "TX Buffer (Slave)");
+		Print_Buffer(rx_buf, "RX Buffer (Slave)");
+		TSART_Tx("S>:\n", strlen("S>:\n"));
+#endif
 	}
     /* USER CODE END WHILE */
-
     /* USER CODE BEGIN 3 */
 //#ifndef MASTER_BOARD
 //
@@ -490,7 +511,7 @@ static void MX_SPI2_Init(void)
 
   hspi2.Instance = SPI2;
   hspi2.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi2.Init.DataSize = SPI_DATASIZE_8BIT; // Intan 32bit, SR1020 8bit SPI.
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
